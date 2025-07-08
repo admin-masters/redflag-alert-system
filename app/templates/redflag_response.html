@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ _("Possible red flags") if redflags else _("No red flags") }}</h2>
+
+{% if redflags %}
+  <ul>
+    {% for rf in redflags %}
+    <li>{{ rf.name }} – <a href="{{ rf.patient_video_url }}" target="_blank">{{ _("Watch video") }}</a></li>
+    {% endfor %}
+  </ul>
+  <p>
+    <a href="tel:{{ clinic.phone_whatsapp }}">{{ _("Call clinic") }}</a> |
+    <a href="https://wa.me/{{ clinic.phone_whatsapp }}?text={{ whatsapp_msg }}">{{ _("Send WhatsApp") }}</a>
+  </p>
+{% else %}
+  <p>{{ _("Your answers did not trigger any immediate concerns.") }}</p>
+{% endif %}
+{% endblock %}
