@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.services import form_logic
+from app.routers import patient
 
 app = FastAPI(title="Inditech RFA")
 templates = Jinja2Templates(directory="app/templates")
@@ -34,3 +35,5 @@ def open_form(
             "session_id": session_id,
         },
     )
+
+app.include_router(patient.router)
