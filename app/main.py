@@ -5,8 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from db.session import get_session
-from services import form_logic
+from app.db.session import get_session
+from app.services import form_logic
 
 app = FastAPI(title="Inditech RFA")
 templates = Jinja2Templates(directory="app/templates")
