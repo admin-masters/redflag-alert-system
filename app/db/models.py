@@ -76,6 +76,11 @@ class Form(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     title_en: Mapped[str] = mapped_column(String(120))
     description_en: Mapped[str] = mapped_column(Text)
+    questions: Mapped[list["Question"]] = relationship(
+        back_populates="form",
+        cascade="all, delete-orphan",
+        order_by="Question.order_idx",
+    )
 
 
 class Question(Base):
@@ -89,7 +94,19 @@ class Question(Base):
     order_idx: Mapped[int] = mapped_column(Integer)
     question_key: Mapped[str] = mapped_column(String(64))
 
-    form: Mapped["Form"] = relationship()
+    form: Mapped["Form"] = relationship(back_populates="questions")
+
+    # one question ↔ many options
+    options: Mapped[list["Option"]] = relationship(
+        back_populates="question",
+        cascade="all, delete-orphan",
+        order_by="Option.order_idx",
+    )
+
+    # localised copies
+    localisations: Mapped[list["QuestionLocalised"]] = relationship(
+        cascade="all, delete-orphan"
+    )
 
 
 class QuestionLocalised(Base):
@@ -118,6 +135,11 @@ class Option(Base):
     redflag_id: Mapped[Optional[int]] = mapped_column(ForeignKey("redflags.id"))
 
     redflag: Mapped[Optional["RedFlag"]] = relationship()
+
+    question: Mapped["Question"] = relationship(back_populates="options")
+    localisations: Mapped[list["OptionLocalised"]] = relationship(
+        cascade="all, delete-orphan"
+    )
 
 
 class OptionLocalised(Base):
