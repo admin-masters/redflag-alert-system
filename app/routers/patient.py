@@ -1,20 +1,24 @@
 # app/routers/patient.py
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
-from starlette.status import HTTP_400_BAD_REQUEST
 
 from app.db.session import get_session
+from app.db import models
 from app.services.form_logic import FormPack
 from app.services.whatsapp import deeplink
-from app.db import models
-from app.main import templates   # import the Jinja2Templates instance
+import app.templates  # Jinja2Templates instance
 
 router = APIRouter(prefix="/patient", tags=["patient"])
 
 
-@router.get("/open/{session_id}/{form_slug}", response_class=HTMLResponse)
-def open_form(
+# ---------- open form (GET) ----------
+@router.get(
+    "/open/{session_id}/{form_slug}",
+    response_class=HTMLResponse,
+    name="open_form",
+)
+async def open_form(
     request: Request,
     session_id: int,
     form_slug: str,
@@ -36,28 +40,42 @@ def open_form(
     )
 
 
-@router.post("/submit/{session_id}/{form_slug}", response_class=HTMLResponse)
-def submit_form(
+# ---------- submit form (POST) ----------
+@router.post(
+    "/submit/{session_id}/{form_slug}",
+    response_class=HTMLResponse,
+    name="submit_form",
+)
+async def submit_form(
     request: Request,
     session_id: int,
     form_slug: str,
-    db: Session = Depends(get_session),
     lang: str = "EN",
+    db: Session = Depends(get_session),
 ):
+    # grab data out of the HTML form
     form_data = await request.form()
-    answers = {k: v for k, v in form_data.items()}  # question_key: option_key
+    answers = {k: v for k, v in form_data.items()}  # {question_key: option_key}
 
     fp = FormPack.by_slug(db, form_slug)
     redflags = fp.evaluate(answers)
 
-    # TODO: insert rows into form_submissions / answers / submission_redflags
-    #       enforce daily quota, etc.
+    # TODO:  insert rows into patient_sessions / form_submissions / answers
+    #        and enforce daily-quota limits here.
 
-    # Dummy clinic object (replace with actual join):
+    # --- stub clinic lookup (replace with real query) ---
     clinic = db.query(models.Clinic).first()
+    if clinic is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clinic not found (seed some data first)",
+        )
 
-    wf_msg = f"I just submitted the {fp.meta.title_en} form and saw red-flags."
-    wa_link = deeplink(clinic.phone_whatsapp, wf_msg)
+    wa_msg = (
+        f"I just completed the {fp.meta.title_en} form and received advice. "
+        "Please contact me back."
+    )
+    wa_link = deeplink(clinic.phone_whatsapp, wa_msg)
 
     return templates.TemplateResponse(
         "redflag_response.html",
@@ -66,6 +84,7 @@ def submit_form(
             "lang": lang,
             "redflags": redflags,
             "clinic": clinic,
-            "whatsapp_msg": wf_msg,
+            "whatsapp_msg": wa_msg,
+            "whatsapp_link": wa_link,
         },
     )
