@@ -123,7 +123,7 @@ def main():
     args = ap.parse_args()
 
     # Connect Sheets
-    gc = gspread.client.Client.from_service_account()
+    gc = gspread.service_account(filename="gsa_inditech.json")
     sh = gc.open_by_key(args.sheet)
 
     db = SessionLocal()
@@ -148,7 +148,28 @@ def main():
             print(f"[WARN] sheet {lang} not found, skipping")
             continue
         ws = sh.worksheet(lang)
-        df = pd.DataFrame(ws.get_all_records())
+
+        # NEW – strip duplicate/blank headers in memory
+        rows = ws.get_all_values()
+        if not rows:
+            raise ValueError(f"Sheet '{lang}' is empty")
+
+        # use first row as header, but coerce blanks → f"Unnamed_{idx}"
+        headers = [
+            h if h.strip() else f"Unnamed_{i}"
+            for i, h in enumerate(rows[0])
+        ]
+        seen = set()
+        deduped = []
+        for h in headers:
+            if h in seen:
+                deduped.append(f"{h}_dup")
+            else:
+                deduped.append(h)
+                seen.add(h)
+
+        df = pd.DataFrame(rows[1:], columns=deduped)
+
         ingest_tab(db, df, lang, form)
         db.commit()
         print(f"✓ {lang} imported")
