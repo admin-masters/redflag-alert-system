@@ -1,28 +1,32 @@
+#!/usr/bin/env python
 """
-Usage:
-    python scripts/import_form_from_gsheet.py \
-        --sheet "1J4xsPiY_GSeIMyBqz8V77IX9dhmzsaTHc9tcwSA__yE" \
-        --slug rash_body --version 1 \
-        --langs EN HI TA
+Import a condition form from a Google Sheet laid out LONG-wise:
+one row per option, grouped by "Sr No".
 
-The script:
-  • Creates (or updates) Form, Questions, Options, RedFlags, Videos, References
-  • Handles any number of language tabs (one tab per language code)
-  • Is idempotent – running twice won’t duplicate rows
+No 'QuestionKey' column is required.
 """
 
 from __future__ import annotations
-import argparse, re, json
+import argparse, re
+from typing import Dict
 import gspread
 import pandas as pd
+import numpy as np
+from unidecode import unidecode
 from sqlalchemy.orm import Session
+
 from app.db.session import SessionLocal
 from app.db import models
 
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
-def upsert(db: Session, model, match: dict, defaults: dict):
+
+# ---------------- helpers --------------------------------------------------- #
+def slug(txt: str, max_len: int = 60) -> str:
+    base = unidecode(txt).lower()
+    base = re.sub(r"[^a-z0-9]+", "_", base).strip("_")
+    return base[:max_len] or "x"
+
+
+def upsert(db: Session, model, match: Dict, defaults: Dict):
     obj = db.query(model).filter_by(**match).one_or_none()
     if obj:
         for k, v in defaults.items():
@@ -33,102 +37,138 @@ def upsert(db: Session, model, match: dict, defaults: dict):
     return obj
 
 
-def parse_options(row: pd.Series) -> list[dict]:
-    """
-    Expect columns Option 1 Text, Option 1 Key, Option 1 IsRedFlag, ...
-    Returns list[{option_key, text, is_redflag, redflag_slug, redflag_name, …}]
-    """
-    opts = []
-    opt_cols = [c for c in row.index if re.match(r"Option \d+ Text", c)]
-    for text_col in opt_cols:
-        base = text_col.replace(" Text", "")
-        key_col = base.replace("Text", "Key")
-        rf_col = base.replace("Text", "IsRedFlag")
-        rf_slug_col = base.replace("Text", "RedFlagSlug")
-        rf_name_col = base.replace("Text", "RedFlagName")
-        if pd.isna(row[text_col]):
-            continue
-        opts.append(
-            {
-                "option_key": str(row[key_col]).strip(),
-                "text": str(row[text_col]).strip(),
-                "is_redflag": bool(row[rf_col]),
-                "redflag_slug": str(row[rf_slug_col]).strip() if rf_slug_col in row else None,
-                "redflag_name": str(row[rf_name_col]).strip() if rf_name_col in row else None,
-            }
+# ---------------- core ingest ---------------------------------------------- #
+def ingest_tab(df: pd.DataFrame, lang: str, form: models.Form, db: Session):
+
+    # standardise headers -> remove spaces, lower-case, replace with underscores
+    df.columns = [re.sub(r"[^A-Za-z0-9]", "_", c).lower() for c in df.columns]
+
+    must_have = {"sr_no", "question", "option"}
+    if not must_have.issubset(df.columns):
+        raise ValueError(
+            f"Sheet '{lang}' missing columns: {', '.join(must_have - set(df.columns))}"
         )
-    return opts
 
+    # clean Sr No column -> forward-fill
+    df["sr_no"] = (
+        df["sr_no"]
+        .astype(str)
+        .str.strip()
+        .replace({"": np.nan})
+        .ffill()
+    )
 
-def ingest_tab(db: Session, df: pd.DataFrame, lang: str, form: models.Form):
-    """
-    df = one sheet read via pandas
-    Assumes first data row per question; blank rows ignored.
-    """
-    for _, row in df.dropna(subset=["QuestionKey"]).iterrows():
-        q = upsert(
+    # drop rows still NaN
+    df = df.dropna(subset=["sr_no", "question", "option"])
+
+    for sr_no, group in df.groupby("sr_no", sort=False):
+        try:
+            order_idx = int(float(sr_no))
+        except ValueError:
+            print(f"[WARN] bad Sr No '{sr_no}', skipped")
+            continue
+
+        q_text = str(group["question"].iloc[0]).strip()
+        if not q_text:
+            continue
+
+        # ① upsert QUESTION by (form, order)
+        question = upsert(
             db,
             models.Question,
-            {"question_key": row["QuestionKey"]},
-            {"form_id": form.id, "order_idx": int(row["Order"])},
+            {"form_id": form.id, "order_idx": order_idx},
+            {},  # no question_key supplied
         )
-
         upsert(
             db,
             models.QuestionLocalised,
-            {"question_id": q.id, "lang_code": lang},
-            {"text": row["QuestionText"]},
+            {"question_id": question.id, "lang_code": lang},
+            {"text": q_text},
         )
 
-        for idx, opt in enumerate(parse_options(row), start=1):
-            o = upsert(
+        # iterate each OPTION row for this question
+        for idx, row in enumerate(group.itertuples(index=False), start=1):
+            opt_txt = str(row.option).strip()
+            if not opt_txt:
+                continue
+
+            opt_key = slug(opt_txt, 40)
+            is_rf = str(getattr(row, "red_flag_trigger", "")).strip().lower() in {
+                "yes", "true", "y", "1"
+            }
+            rf_raw = str(getattr(row, "redflag_id", "")).strip()
+            rf_slug = slug(rf_raw) if is_rf and rf_raw else None
+
+            # ② upsert OPTION
+            option = upsert(
                 db,
                 models.Option,
-                {"question_id": q.id, "option_key": opt["option_key"]},
+                {"question_id": question.id, "option_key": opt_key},
                 {
                     "order_idx": idx,
-                    "is_redflag": opt["is_redflag"],
+                    "is_redflag": is_rf,
                 },
             )
             upsert(
                 db,
                 models.OptionLocalised,
-                {"option_id": o.id, "lang_code": lang},
-                {"text": opt["text"]},
+                {"option_id": option.id, "lang_code": lang},
+                {"text": opt_txt},
             )
 
-            # — red-flag rows (create once, language-agnostic name_en now) —
-            if opt["is_redflag"] and opt["redflag_slug"]:
+            # ③ red-flag rows & resources
+            if is_rf and rf_slug:
+                ataglance = str(getattr(row, "at_a_glance", "")).strip()
+                mini_cme = str(getattr(row, "mini_cme_vimeo", "")).strip() or None
+                long_cme = str(getattr(row, "long_cme_vimeo", "")).strip() or None
+                patient_vid = str(
+                    getattr(row, "patient_video_you_tube", "")
+                ).strip() or None
+
                 rf = upsert(
                     db,
                     models.RedFlag,
-                    {"slug": opt["redflag_slug"]},
+                    {"slug": rf_slug},
                     {
-                        "name_en": opt["redflag_name"] or opt["redflag_slug"],
-                        "ataglance_en": row.get("AtAGlanceEN", ""),
+                        "name_en": rf_raw or rf_slug,
+                        "ataglance_en": ataglance,
+                        "mini_cme_vimeo": mini_cme,
+                        "long_cme_vimeo": long_cme,
                     },
                 )
-                o.redflag_id = rf.id  # link option→redflag
 
-    db.flush()
+                db.flush()  # <-- Ensure rf.id is assigned
+
+                option.redflag_id = rf.id
+
+                upsert(
+                    db,
+                    models.RedFlagLocalised,
+                    {"redflag_id": rf.id, "lang_code": lang},
+                    {
+                        "name": rf.name_en,
+                        "ataglance_text": ataglance,
+                        "patient_video_youtube": patient_vid,
+                    },
+                )
+
+    db.commit()
+    print(f"✓ {lang} imported")
 
 
-# -----------------------------------------------------------------------------
+# ---------------- CLI ------------------------------------------------------- #
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sheet", required=True, help="Google sheet id")
-    ap.add_argument("--slug", required=True, help="form slug, e.g. rash_body")
+    ap.add_argument("--sheet", required=True)
+    ap.add_argument("--slug", required=True)
     ap.add_argument("--version", default="1")
-    ap.add_argument("--langs", nargs="+", required=True, help="EN HI TA ...")
+    ap.add_argument("--langs", nargs="+", required=True)
     args = ap.parse_args()
 
-    # Connect Sheets
-    gc = gspread.service_account(filename="gsa_inditech.json")
-    sh = gc.open_by_key(args.sheet)
+    gs = gspread.service_account(filename="gsa_inditech.json")  # JSON pointed to by $GOOGLE_APPLICATION_CREDENTIALS
+    sh = gs.open_by_key(args.sheet)
 
-    db = SessionLocal()
-
-    # Create/update Form entry
+    db: Session = SessionLocal()
     form = upsert(
         db,
         models.Form,
@@ -137,45 +177,28 @@ def main():
             "version": args.version,
             "is_active": True,
             "title_en": sh.title,
-            "description_en": f"{sh.title} – imported from Google Sheets",
+            "description_en": f"{sh.title} imported",
         },
     )
     db.commit()
 
-    # Loop languages
     for lang in args.langs:
-        if lang not in [ws.title for ws in sh.worksheets()]:
-            print(f"[WARN] sheet {lang} not found, skipping")
+        try:
+            ws = sh.worksheet(lang)
+        except gspread.WorksheetNotFound:
+            print(f"[WARN] tab '{lang}' not found; skipping")
             continue
-        ws = sh.worksheet(lang)
 
-        # NEW – strip duplicate/blank headers in memory
         rows = ws.get_all_values()
         if not rows:
-            raise ValueError(f"Sheet '{lang}' is empty")
+            print(f"[WARN] tab '{lang}' empty; skipping")
+            continue
 
-        # use first row as header, but coerce blanks → f"Unnamed_{idx}"
-        headers = [
-            h if h.strip() else f"Unnamed_{i}"
-            for i, h in enumerate(rows[0])
-        ]
-        seen = set()
-        deduped = []
-        for h in headers:
-            if h in seen:
-                deduped.append(f"{h}_dup")
-            else:
-                deduped.append(h)
-                seen.add(h)
-
-        df = pd.DataFrame(rows[1:], columns=deduped)
-
-        ingest_tab(db, df, lang, form)
-        db.commit()
-        print(f"✓ {lang} imported")
+        df = pd.DataFrame(rows[1:], columns=rows[0])
+        ingest_tab(df, lang, form, db)
 
     db.close()
-    print("✓ Import complete.")
+    print("✓ Import complete")
 
 
 if __name__ == "__main__":
