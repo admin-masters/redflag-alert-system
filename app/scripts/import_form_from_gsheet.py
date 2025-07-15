@@ -79,6 +79,7 @@ def ingest_tab(df: pd.DataFrame, lang: str, form: models.Form, db: Session):
             {"form_id": form.id, "order_idx": order_idx},
             {},  # no question_key supplied
         )
+        db.flush()  # guarantees question.id is available
         upsert(
             db,
             models.QuestionLocalised,
@@ -103,12 +104,14 @@ def ingest_tab(df: pd.DataFrame, lang: str, form: models.Form, db: Session):
             option = upsert(
                 db,
                 models.Option,
-                {"question_id": question.id, "option_key": opt_key},
+                {"question_id": question.id, "order_idx": idx},  # match on order!
                 {
-                    "order_idx": idx,
+                    "option_key": opt_key,
                     "is_redflag": is_rf,
                 },
             )
+            db.flush()  # ← ensure option.id is now assigned
+
             upsert(
                 db,
                 models.OptionLocalised,
@@ -151,6 +154,9 @@ def ingest_tab(df: pd.DataFrame, lang: str, form: models.Form, db: Session):
                         "patient_video_youtube": patient_vid,
                     },
                 )
+
+            elif is_rf and not rf_slug:
+                print(f"[WARN] Sr No {sr_no} option '{opt_txt}' marked as red‑flag but Redflag_id blank – skipped")
 
     db.commit()
     print(f"✓ {lang} imported")

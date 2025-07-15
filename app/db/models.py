@@ -92,11 +92,7 @@ class Question(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"))
     order_idx: Mapped[int] = mapped_column(Integer)
-    question_key: Mapped[Optional[str]] = mapped_column(
-        String(64),
-        nullable=True,  # ← was False
-        unique=False  # drop any uniqueness you may have added
-    )
+    question_key: Mapped[Optional[str]] = mapped_column(String)
 
     form: Mapped["Form"] = relationship(back_populates="questions")
 
