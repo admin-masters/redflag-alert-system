@@ -2,30 +2,38 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 
-<h2>{{ form_local.title }}</h2>
+<h2>{{ form_meta.title_en }}</h2>
 
-<form action="{{ url_for('patient.submit_form', clinic_id=clinic.id, form_slug=form.slug) }}"
-      method="post" x-data="{ }">
+<form
+  action="{{ url_for('patient.submit_form',
+                     session_id=session_id,
+                     form_slug=form_meta.slug) }}"
+  method="post"
+  x-data="{}"
+>
+  <!-- keep the hidden phone number field if you added it earlier -->
+  <input type="hidden" name="patient_phone" value="{{ request.query_params['phone'] }}">
+
   {% for q in questions %}
-    <div class="question-block mb-4" x-data="{ }">
+    <div class="question-block mb-4">
       <p class="fw-semibold">{{ loop.index }}. {{ q.local.text }}</p>
 
       {% if q.input_type.value == 'text' %}
-         <input class="form-control" type="text" name="q{{ q.id }}">
+        <input class="form-control" type="text" name="q{{ q.id }}">
       {% elif q.input_type.value == 'checkbox' %}
-         {% for opt in q.options|sort(attribute='order_idx') %}
-           <label class="d-block">
-             <input type="checkbox" name="q{{ q.id }}" value="{{ opt.id }}">
-             {{ opt.local.text }}
-           </label>
-         {% endfor %}
+        {% for opt in q.options|sort(attribute='order_idx') %}
+          <label class="d-block">
+            <input type="checkbox" name="q{{ q.id }}" value="{{ opt.id }}">
+            {{ opt.local.text }}
+          </label>
+        {% endfor %}
       {% else %}
-         {% for opt in q.options|sort(attribute='order_idx') %}
-           <label class="d-block">
-             <input type="radio" name="q{{ q.id }}" value="{{ opt.id }}">
-             {{ opt.local.text }}
-           </label>
-         {% endfor %}
+        {% for opt in q.options|sort(attribute='order_idx') %}
+          <label class="d-block">
+            <input type="radio" name="q{{ q.id }}" value="{{ opt.id }}">
+            {{ opt.local.text }}
+          </label>
+        {% endfor %}
       {% endif %}
     </div>
   {% endfor %}

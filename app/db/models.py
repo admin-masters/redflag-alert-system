@@ -1,13 +1,12 @@
 # app/db/models.py
 from __future__ import annotations
 import enum
+
 from datetime import datetime
 from typing import Optional
+import sqlalchemy as sa
+from sqlalchemy import (     Enum, ForeignKey, Index, UniqueConstraint,     Boolean, Column, DateTime, Integer, String, Text, JSON )
 
-from sqlalchemy import (
-    Enum, ForeignKey, Index, UniqueConstraint,
-    Boolean, Column, DateTime, Integer, String, Text, JSON
-)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -30,6 +29,12 @@ class VideoType(str, enum.Enum):
     MINI_CME = "mini_cme"
     LONG_CME = "long_cme"
     PATIENT = "patient"
+
+
+class InputType(str, enum.Enum):
+    radio = "radio"
+    checkbox = "checkbox"
+    text = "text"
 
 
 # ---------- core tables ----------
@@ -274,7 +279,4 @@ class SubmissionRedFlag(Base):
     redflag_id: Mapped[int] = mapped_column(ForeignKey("redflags.id"))
 
 
-class InputType(str, enum.Enum):
-    radio = "radio"
-    checkbox = "checkbox"
-    text = "text"
+

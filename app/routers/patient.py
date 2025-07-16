@@ -15,6 +15,43 @@ from app.services.quota import check_open, check_submit
 router = APIRouter(prefix="/patient", tags=["patient"])
 
 
+# ---------- helper ------------------------------------------------
+async def get_phone(request: Request) -> str:
+    """
+    Extract the WhatsApp number the patient uses to authenticate.
+    • GET /open  : read from query ?phone=...
+    • POST /submit : read from hidden field in form
+    """
+    if request.method == "GET":
+        phone = request.query_params.get("phone")
+    else:  # POST
+        form = await request.form()
+        phone = form.get("patient_phone")
+    if not phone:
+        raise HTTPException(400, "Phone number missing")
+    return phone
+
+
+# ---------- routes ------------------------------------------------
+@router.get("/open/{clinic_id}/{form_slug}")
+async def open_form(
+    clinic_id: int,
+    form_slug: str,
+    lang: str = "English",
+    phone: str = Depends(get_phone),
+):
+    await check_open(phone)
+    # ... existing logic to render form page ...
+
+@router.post("/submit/{clinic_id}/{form_slug}")
+async def submit_form(
+    clinic_id: int,
+    form_slug: str,
+    request: Request,
+    phone: str = Depends(get_phone),
+):
+    await check_submit(phone)
+
 # ---------- open form (GET) ----------
 @router.get(
     "/open/{session_id}/{form_slug}",
@@ -87,3 +124,5 @@ async def submit_form(clinic_id: int, form_slug: str, request: Request,
             "whatsapp_link": wa_link,
         },
     )
+
+
