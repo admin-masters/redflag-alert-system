@@ -92,6 +92,10 @@ class Question(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("forms.id"))
     order_idx: Mapped[int] = mapped_column(Integer)
+    input_type: Mapped[InputType] = mapped_column(
+        sa.Enum(InputType), default=InputType.radio, nullable=False
+    )
+
     question_key: Mapped[Optional[str]] = mapped_column(String)
 
     form: Mapped["Form"] = relationship(back_populates="questions")
@@ -268,3 +272,9 @@ class SubmissionRedFlag(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     submission_id: Mapped[int] = mapped_column(ForeignKey("form_submissions.id"))
     redflag_id: Mapped[int] = mapped_column(ForeignKey("redflags.id"))
+
+
+class InputType(str, enum.Enum):
+    radio = "radio"
+    checkbox = "checkbox"
+    text = "text"

@@ -73,13 +73,16 @@ def ingest_tab(df: pd.DataFrame, lang: str, form: models.Form, db: Session):
             continue
 
         # ① upsert QUESTION by (form, order)
+        # detect type: single 'Free text' row ⇒ text, ≥1 rows & "multi" flag later ⇒ checkbox
+        first_opt = str(group["option"].iloc[0]).strip().lower()
+        input_type = models.InputType.text if first_opt == "free text" else models.InputType.radio
         question = upsert(
-            db,
-            models.Question,
-            {"form_id": form.id, "order_idx": order_idx},
-            {},  # no question_key supplied
+                db,
+                models.Question,
+                {"form_id": form.id, "order_idx": order_idx},
+                {"input_type": input_type},
         )
-        db.flush()  # guarantees question.id is available
+        db.flush()
         upsert(
             db,
             models.QuestionLocalised,
@@ -101,16 +104,17 @@ def ingest_tab(df: pd.DataFrame, lang: str, form: models.Form, db: Session):
             rf_slug = slug(rf_raw) if is_rf and rf_raw else None
 
             # ② upsert OPTION
-            option = upsert(
-                db,
-                models.Option,
-                {"question_id": question.id, "order_idx": idx},  # match on order!
-                {
-                    "option_key": opt_key,
-                    "is_redflag": is_rf,
-                },
-            )
             db.flush()  # ← ensure option.id is now assigned
+            option = upsert(
+                    db,
+                    models.Option,
+                    {"question_id": question.id, "order_idx": idx},
+                    {
+                            "option_key": opt_key,
+                            "is_redflag": is_rf,
+                    },
+            )
+            db.flush()  # option.id now non-NULL
 
             upsert(
                 db,

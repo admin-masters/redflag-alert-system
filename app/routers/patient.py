@@ -9,6 +9,9 @@ from app.services.form_logic import FormPack
 from app.services.whatsapp import deeplink
 import app.templates  # Jinja2Templates instance
 
+from fastapi import APIRouter, Depends, Request
+from app.services.quota import check_open, check_submit
+
 router = APIRouter(prefix="/patient", tags=["patient"])
 
 
@@ -46,13 +49,9 @@ async def open_form(
     response_class=HTMLResponse,
     name="submit_form",
 )
-async def submit_form(
-    request: Request,
-    session_id: int,
-    form_slug: str,
-    lang: str = "EN",
-    db: Session = Depends(get_session),
-):
+async def submit_form(clinic_id: int, form_slug: str, request: Request,
+                       phone: str = Depends(get_phone)):
+    await check_submit(phone)
     # grab data out of the HTML form
     form_data = await request.form()
     answers = {k: v for k, v in form_data.items()}  # {question_key: option_key}
