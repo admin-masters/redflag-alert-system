@@ -32,26 +32,6 @@ async def get_phone(request: Request) -> str:
     return phone
 
 
-# ---------- routes ------------------------------------------------
-@router.get("/open/{clinic_id}/{form_slug}")
-async def open_form(
-    clinic_id: int,
-    form_slug: str,
-    lang: str = "English",
-    phone: str = Depends(get_phone),
-):
-    await check_open(phone)
-    # ... existing logic to render form page ...
-
-@router.post("/submit/{clinic_id}/{form_slug}")
-async def submit_form(
-    clinic_id: int,
-    form_slug: str,
-    request: Request,
-    phone: str = Depends(get_phone),
-):
-    await check_submit(phone)
-
 # ---------- open form (GET) ----------
 @router.get(
     "/open/{session_id}/{form_slug}",
@@ -86,8 +66,13 @@ async def open_form(
     response_class=HTMLResponse,
     name="submit_form",
 )
-async def submit_form(clinic_id: int, form_slug: str, request: Request,
-                       phone: str = Depends(get_phone)):
+async def submit_form(
+    session_id: int,
+    form_slug: str,
+    request: Request,
+    db: Session = Depends(get_session),
+    phone: str = Depends(get_phone),
+):
     await check_submit(phone)
     # grab data out of the HTML form
     form_data = await request.form()
