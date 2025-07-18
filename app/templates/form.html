@@ -1,56 +1,61 @@
 {# app/templates/form.html #}
 {% extends "base.html" %}
 {% block content %}
-<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 
-<h2>{{ form_meta.title_en }}</h2>
+<h2 class="mb-4">{{ form_meta.title_en }}</h2>
 
-{# Preserve the patient’s phone in the query string so it reaches the POST #}
 <form
-  action="{{ url_for(
-              'submit_form',
-              session_id=session_id,
-              form_slug=form_meta.slug
-          ) }}?phone={{ request.query_params.get('phone')|urlencode }}"
-  method="post"
->
+  action="{{ url_for('submit_form',
+                     session_id=session_id,
+                     form_slug=form_meta.slug) }}?phone={{ request.query_params.get('phone')|urlencode }}"
+  method="post">
+
+  {# keep phone available to the Depends(get_phone) helper on POST #}
+  <input type="hidden" name="patient_phone"
+         value="{{ request.query_params.get('phone') }}">
 
   {% for q in questions %}
-      {# ---------- derive the question’s input type safely ---------- #}
-      {% set q_type = q.get('input_type') or q.get('type') or 'radio' %}
+    <div class="mb-4">
 
-      <div class="question-block mb-4">
-          <p class="fw-semibold">{{ loop.index }}.&nbsp;{{ q.text }}</p>
+      <p class="fw-semibold">{{ loop.index }}.&nbsp;{{ q.text }}</p>
 
-          {# ---------------- TEXT INPUT ---------------- #}
-          {% if q_type == 'text' %}
-              <input class="form-control" type="text" name="q{{ q.id }}">
+      {# decide which control to render #}
+      {% set kind =
+           q.input_type if q.input_type is defined else
+           ('text' if (q.options|length == 1 and
+                       q.options[0].option_key == 'free_text') else 'radio') %}
 
-          {# -------------- CHECKBOX LIST --------------- #}
-          {% elif q_type == 'checkbox' %}
-              {% for opt in q.options|sort(attribute='order_idx') %}
-                  <label class="d-block">
-                      <input type="checkbox"
-                             name="q{{ q.id }}"
-                             value="{{ opt.id }}">
-                      {{ opt.text }}
-                  </label>
-              {% endfor %}
+      {# ---------- free-text ----------------------------------- #}
+      {% if kind == 'text' %}
+        <input class="form-control"
+               type="text"
+               name="q{{ q.id }}">
 
-          {# -------------- RADIO LIST (default) -------- #}
-          {% else %}
-              {% for opt in q.options|sort(attribute='order_idx') %}
-                  <label class="d-block">
-                      <input type="radio"
-                             name="q{{ q.id }}"
-                             value="{{ opt.id }}">
-                      {{ opt.text }}
-                  </label>
-              {% endfor %}
-          {% endif %}
-      </div>
+      {# ---------- multi-select (checkbox) --------------------- #}
+      {% elif kind == 'checkbox' %}
+        {% for opt in q.options|sort(attribute='order_idx') %}
+          <label class="d-block">
+            <input type="checkbox"
+                   name="q{{ q.id }}[]"
+                   value="{{ opt.option_key }}">
+            {{ opt.text }}
+          </label>
+        {% endfor %}
+
+      {# ---------- single-select (radio) ----------------------- #}
+      {% else %}
+        {% for opt in q.options|sort(attribute='order_idx') %}
+          <label class="d-block">
+            <input type="radio"
+                   name="q{{ q.id }}"
+                   value="{{ opt.option_key }}">
+            {{ opt.text }}
+          </label>
+        {% endfor %}
+      {% endif %}
+    </div>
   {% endfor %}
 
-  <button class="btn btn-primary" type="submit">Submit</button>
+  <button class="btn btn-primary mt-3" type="submit">Submit</button>
 </form>
 {% endblock %}

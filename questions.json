@@ -1,0 +1,52 @@
+{
+  "rash_body": {                 // form_slug
+    "version": "1.0",
+    "languages": ["English", "Hindi", "Tamil"],
+    "English": {
+      "title": "Rash on body",
+      "questions": [
+        {
+          "id": 11001,
+          "text": "What is the age of your child?",
+          "input_type": "text"
+        },
+        {
+          "id": 11002,
+          "text": "Since when does your child have a rash?",
+          "input_type": "radio",
+          "options": [
+            { "option_key": "1_3_days", "text": "1-3 days" },
+            { "option_key": "3_7_days", "text": "3-7 days" },
+            { "option_key": "gt_7_days", "text": "More than 7 days" }
+          ]
+        },
+        {
+          "id": 11007,
+          "text": "Does the rash itch excessively?",
+          "input_type": "radio",
+          "options": [
+            { "option_key": "yes", "text": "Yes" },
+            { "option_key": "no",  "text": "No" }
+          ],
+          "show_if": { "question": 11006, "equals": "yes" }   // branching
+        },
+        {
+          "id": 11011,
+          "text": "Any history of medication, bites, stings in recent times?",
+          "input_type": "radio",
+          "options": [
+            {
+              "option_key": "yes",
+              "text": "Yes",
+              "extra_input": {          // internal branching w/ free-text
+                "placeholder": "Manually enter medication details"
+              }
+            },
+            { "option_key": "no", "text": "No" }
+          ]
+        }
+      ]
+    },
+    "Hindi": { /* …same structure… */ }
+  }
+}
